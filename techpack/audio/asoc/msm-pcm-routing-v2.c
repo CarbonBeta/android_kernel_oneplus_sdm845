@@ -130,7 +130,7 @@ static struct msm_pcm_route_bdai_pp_params
 	msm_bedais_pp_params[MSM_BACKEND_DAI_PP_PARAMS_REQ_MAX] = {
 	{HDMI_RX, 0, 0, 0},
 	{DISPLAY_PORT_RX, 0, 0, 0},
-};
+}; 
 
 /*
  * The be_dai_name_table is passed to HAL so that it can specify the
