@@ -644,6 +644,10 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 	bool is_pa_on = false;
 	u8 fsm_en = 0;
 
+/* tony.liu@Multimedia.Audio,2017.12.21 add headset plug type detect */
+	unsigned int i = 0;
+	pr_debug("%s:-----start, name:%s\n", __func__, mbhc->wcd934x_edev->name);
+
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
 	pr_debug("%s: enter insertion %d hph_status %x\n",
@@ -686,6 +690,18 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		mbhc->zl = mbhc->zr = 0;
 		pr_debug("%s: Reporting removal %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
+
+/* tony.liu@Multimedia.Audio,2017.12.21 add headset plug type detect */
+		for (i = EXTCON_PLUG_TYPE_NONE; i <= EXTCON_PLUG_TYPE_GND_MIC_SWAP; i++)
+			extcon_set_state(mbhc->wcd934x_edev, i, 0); //clean state, not uevent
+        extcon_set_state_sync(mbhc->wcd934x_edev, EXTCON_PLUG_TYPE_NONE, 1);
+		pr_info("%s: remove: "  \
+		        "no connect = %d, headset = %d, headphone = %d, G_M_SWAP = %d\n",
+		        __func__,
+				extcon_get_state(mbhc->wcd934x_edev, 19),
+				extcon_get_state(mbhc->wcd934x_edev, 20),
+				extcon_get_state(mbhc->wcd934x_edev, 21),
+				extcon_get_state(mbhc->wcd934x_edev, 22));
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				mbhc->hph_status, WCD_MBHC_JACK_MASK);
 		wcd_mbhc_set_and_turnoff_hph_padac(mbhc);
@@ -808,6 +824,34 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 /* liuhaituo@MM.Audio add new function to adapt headset volume */
 		if (headset_imp_enable)
 			judge_headset_impedance(mbhc);
+
+
+/* tony.liu@Multimedia.Audio,2017.12.21 add headset plug type detect */
+		pr_info("%s: current_plug: %d\n", __func__, mbhc->current_plug);
+		for (i = EXTCON_PLUG_TYPE_NONE; i <= EXTCON_PLUG_TYPE_GND_MIC_SWAP; i++)
+			extcon_set_state(mbhc->wcd934x_edev, i, 0);
+		switch(mbhc->current_plug) {
+			case MBHC_PLUG_TYPE_HEADPHONE:
+			case MBHC_PLUG_TYPE_HIGH_HPH:
+				extcon_set_state_sync(mbhc->wcd934x_edev, EXTCON_PLUG_TYPE_HEADPHONE, 1);  //21  headphone id	in extcon_edev
+				break;
+			case MBHC_PLUG_TYPE_GND_MIC_SWAP:
+				extcon_set_state_sync(mbhc->wcd934x_edev, EXTCON_PLUG_TYPE_GND_MIC_SWAP, 1);
+				break;
+			case MBHC_PLUG_TYPE_HEADSET:
+				extcon_set_state_sync(mbhc->wcd934x_edev, EXTCON_PLUG_TYPE_HEADSET, 1);
+				break;
+			default:
+				extcon_set_state_sync(mbhc->wcd934x_edev, EXTCON_PLUG_TYPE_NONE, 1);
+                break;
+		}
+		pr_info("%s: insert: "  \
+		        "no_connect = %d, headset = %d, headphone = %d, G_M_SWAP = %d\n",
+		        __func__,
+				extcon_get_state(mbhc->wcd934x_edev, 19),
+				extcon_get_state(mbhc->wcd934x_edev, 20),
+				extcon_get_state(mbhc->wcd934x_edev, 21),
+				extcon_get_state(mbhc->wcd934x_edev, 22));
 
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
@@ -1135,7 +1179,7 @@ static void wcd_btn_lpress_fn(struct work_struct *work)
 		wcd_mbhc_jack_report(mbhc, &mbhc->button_jack,
 				mbhc->buttons_pressed, mbhc->buttons_pressed);
 	}
-	pr_debug("%s: leave\n", __func__);
+	pr_info("%s: leave\n", __func__);
 	mbhc->mbhc_cb->lock_sleep(mbhc, false);
 }
 
@@ -1188,7 +1232,7 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 
 	/* If switch interrupt already kicked in, ignore button press */
 	if (mbhc->in_swch_irq_handler) {
-		pr_debug("%s: Swtich level changed, ignore button press\n",
+		pr_err("%s: Swtich level changed, ignore button press\n",
 			 __func__);
 		goto done;
 	}
@@ -1208,6 +1252,7 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 		WARN(1, "Button pressed twice without release event\n");
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
+ 	pr_info("%s: Button %#x pressed!\n", __func__, mbhc->buttons_pressed); 
 done:
 	pr_debug("%s: leave\n", __func__);
 	WCD_MBHC_RSC_UNLOCK(mbhc);
@@ -1229,7 +1274,7 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	if (mbhc->is_btn_press) {
 		mbhc->is_btn_press = false;
 	} else {
-		pr_debug("%s: This release is for fake btn press\n", __func__);
+ 		pr_err("%s: This release is for fake btn press\n", __func__); 
 		goto exit;
 	}
 
@@ -1249,13 +1294,13 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
 		ret = wcd_cancel_btn_work(mbhc);
 		if (ret == 0) {
-			pr_debug("%s: Reporting long button release event\n",
+ 			pr_info("%s: Reporting long button release event\n",
 				 __func__);
 			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack,
 					0, mbhc->buttons_pressed);
 		} else {
 			if (mbhc->in_swch_irq_handler) {
-				pr_debug("%s: Switch irq kicked in, ignore\n",
+ 				pr_err("%s: Switch irq kicked in, ignore\n", 
 					__func__);
 			} else {
 				pr_debug("%s: Reporting btn press\n",
@@ -1264,8 +1309,8 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 						     &mbhc->button_jack,
 						     mbhc->buttons_pressed,
 						     mbhc->buttons_pressed);
-				pr_debug("%s: Reporting btn release\n",
-					 __func__);
+				pr_info("%s: Reporting btn %#x press\n",
+ 					 __func__, mbhc->buttons_pressed); 
 				wcd_mbhc_jack_report(mbhc,
 						&mbhc->button_jack,
 						0, mbhc->buttons_pressed);
